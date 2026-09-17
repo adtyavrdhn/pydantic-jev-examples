@@ -15,10 +15,17 @@ import argparse
 import asyncio
 import os
 import sys
+import time
+from collections.abc import Callable
 
+from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.wrapper import WrapperModel
+from pydantic_ai.settings import ModelSettings
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import Evaluator, LLMJudge
 from rich import print
+from rich.table import Table
 from typing_extensions import TypedDict
 
 from jev_judge import JevJudge
@@ -112,27 +119,47 @@ def support_bot(question: str) -> str:
     return next(reply for _, q, reply, _ in REPLIES if q == question)
 
 
+class Metered(WrapperModel):
+    """Adds up what the model inside costs, so Claude's bill can sit next to Jev's."""
+
+    spent_usd = 0.0
+
+    async def request(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
+        response = await super().request(messages, model_settings, model_request_parameters)
+        self.spent_usd += float(response.cost().total_price)
+        return response
+
+
 async def demo(compare: bool) -> None:
-    judge = JevJudge(rubric=RUBRIC, include_input=True)
-    evaluators: list[Evaluator[str, str, Label]] = [judge]
+    cases = [Case(name=name, inputs=question, metadata=label) for name, question, _, label in REPLIES]
+
+    jev = JevJudge(rubric=RUBRIC, include_input=True)
+    judges: list[tuple[Evaluator[str, str, Label], Callable[[], float]]] = [(jev, lambda: jev.spent_usd)]
     if compare:
-        evaluators.append(LLMJudge(rubric=RUBRIC, include_input=True, model='anthropic:claude-fable-5'))
+        claude = Metered('anthropic:claude-sonnet-5')
+        judges.append((LLMJudge(rubric=RUBRIC, include_input=True, model=claude), lambda: claude.spent_usd))
 
-    dataset = Dataset[str, str, Label](
-        name='support-bot replies',
-        cases=[Case(name=name, inputs=question, metadata=label) for name, question, _, label in REPLIES],
-        evaluators=evaluators,
-    )
-    report = await dataset.evaluate(support_bot, progress=False)
-    report.print(include_input=True, include_output=True, include_reasons=True)
+    summary = Table('Judge', 'Agreed with our labels', 'Per case', 'Cost for 10 cases')
+    for judge, spent in judges:
+        dataset = Dataset[str, str, Label](name='support-bot replies', cases=cases, evaluators=[judge])
+        t0 = time.perf_counter()
+        report = await dataset.evaluate(
+            support_bot, max_concurrency=1, progress=False
+        )  # one at a time, so time is per case
+        seconds = time.perf_counter() - t0
+        report.print(include_input=True, include_output=True, include_reasons=True, include_durations=False)
 
-    for evaluation_name in report.cases[0].assertions:
+        name = next(iter(report.cases[0].assertions))
         agreed = sum(
-            c.metadata is not None and c.assertions[evaluation_name].value == c.metadata['should_pass']
-            for c in report.cases
+            c.metadata is not None and c.assertions[name].value == c.metadata['should_pass'] for c in report.cases
         )
-        print(f'[bold]{evaluation_name}[/] agreed with our labels on {agreed} of {len(report.cases)} cases')
-    print(f'Jev cost for {len(report.cases)} cases: ${judge.spent_usd:.5f}')
+        summary.add_row(name, f'{agreed} of {len(cases)}', f'{seconds / len(cases):.2f} s', f'${spent():.5f}')
+    print(summary)
 
 
 if __name__ == '__main__':

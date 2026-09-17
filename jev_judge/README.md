@@ -31,29 +31,34 @@ Each case gets a pass or fail. Jev's probability is in the reason column.
 git clone https://github.com/adtyavrdhn/pydantic-jev-examples && cd pydantic-jev-examples/jev_judge
 export TYPESAFE_API_KEY=...
 uv run demo.py
-uv run demo.py --compare   # Claude judges too, needs ANTHROPIC_API_KEY
+uv run demo.py --compare   # Claude Sonnet 5 judges too, needs ANTHROPIC_API_KEY
 ```
 
 Ten replies from a made-up bike shop bot. One rubric: polite, answers the question, matches the
 shop policy. Each reply is hand-labelled. At the end you see how often each judge agreed with
-the labels, and what Jev cost. Only the TypeSafe key is needed.
+the labels, how long each took per case, and what each cost. Only the TypeSafe key is needed.
 
 Three replies are close calls on purpose. A correct fact said curtly. A polite answer with the
 wrong delivery time. A cheerful reply that ignores the question.
 
 ## What I saw
 
-Very small set. Probably naive. Ten replies I labelled myself for a side project. Take it for
-what it is.
+Very small set. Probably naive. Ten replies I labelled myself for a side project. I will be
+trying this out across our evals suite slowly. This was a nice way to reaffirm what we can do
+with it.
 
-| Judge | Agreed with my labels | Cost for 10 cases |
-|---|---|---|
-| Jev | 9 of 10 | $0.00018 |
-| Claude (LLMJudge) | 10 of 10 | a few cents |
+Cases run one at a time, so the time is per case. The Claude judge is Sonnet 5. That is the
+usual pick for grading: cheaper and faster than the big models, and good enough to explain a
+verdict.
 
-Jev was sure on nine. Fails scored 0.16 or lower. Passes scored 0.95 or higher.
+| Judge | Agreed with my labels | Per case | Cost for 10 cases |
+|---|---|---|---|
+| Jev | 9 of 10 | 0.44 s | $0.00018 |
+| Claude Sonnet 5 (LLMJudge) | 10 of 10 | 2.16 s | $0.036 |
 
-The miss was the curt reply, "30 days." I labelled it a fail for being brusque. Jev gave it 0.64
+Jev was sure on nine. Fails scored 0.17 or lower. Passes scored 0.95 or higher.
+
+The miss was the curt reply, "30 days." I labelled it a fail for being brusque. Jev gave it 0.71
 and passed it. Its least confident call of the run. Claude failed it and said why. A threshold of
 0.75 would have failed it too.
 

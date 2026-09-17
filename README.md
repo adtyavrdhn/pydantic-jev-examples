@@ -84,8 +84,9 @@ Each guard is one short file. Copy it as is.
 | Your own loop | Should the bird flap this tick? | Flap or not | [`flappy_bird/`](flappy_bird/) |
 | A Pydantic Evals evaluator | Does this case pass the rubric? | Pass or fail | [`jev_judge/`](jev_judge/) |
 
-Flappy Bird has no capability. A game loop asks Jev every tick. A Claude agent rewrites Jev's
-question between rounds.
+Flappy Bird is different. I do Flappy Bird for a lot of stuff, and this was me shoehorning it
+in. It still works and it is a lot of fun. It goes to show you can call Jev far more often than
+you would think, even at game tick speeds.
 
 ## The examples
 
