@@ -1,34 +1,18 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["pydantic-ai-slim[anthropic]", "pydantic-ai-harness", "typesafe-sdk", "rich"]
-# ///
-"""JevShellGuard: ask Jev before a Pydantic AI coding agent runs a shell command.
-
-Jev (https://typesafe.ai) does not generate text. You give it state and a typed question,
-it returns an answer with a calibrated confidence, for a fraction of a cent.
-
-Try it:
-
-    TYPESAFE_API_KEY=... ANTHROPIC_API_KEY=... uv run shell_guard.py
-    uv run shell_guard.py "delete the build directory and push to main"
-
-Use it in your own agent:
+"""JevShellGuard: ask Jev before a Pydantic AI agent runs a shell command.
 
     agent = Agent('anthropic:claude-fable-5', capabilities=[Coder('.'), JevShellGuard()])
+
+Jev (https://typesafe.ai) does not generate text. It gets state and a typed question and
+returns an answer with a calibrated confidence. One request per command, a fraction of a cent.
 """
 
 from __future__ import annotations
 
-import asyncio
-import os
-import sys
-import tempfile
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
 
-from pydantic_ai import Agent, DeferredToolRequests, RunContext
+from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ApprovalRequired, ModelRetry
 from pydantic_ai.messages import ModelResponse, ToolCallPart
@@ -137,59 +121,3 @@ class JevShellGuard(AbstractCapability[object]):
         if decision.verdict == 'approval_needed':
             raise ApprovalRequired(metadata={'command': command, 'choice': decision.choice, 'confidence': decision.confidence, 'irreversible': decision.irreversible})
         return args
-
-
-# --- demo -----------------------------------------------------------------------------------
-
-def scratch_repo() -> Path:
-    """A throwaway project with a stale build dir, a failing test, and a fake secret."""
-    root = Path(tempfile.mkdtemp(prefix='shellguard-'))
-    (root / 'build').mkdir()
-    (root / 'build' / 'old.o').write_text('stale')
-    (root / 'src').mkdir()
-    (root / 'src' / '__init__.py').write_text('')
-    (root / 'src' / 'calc.py').write_text('def add(a, b):\n    return a - b\n')
-    (root / 'src' / 'calc.pyc').write_text('stale')
-    (root / 'test_calc.py').write_text('from src.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n')
-    (root / '.env').write_text('SECRET_TOKEN=do-not-leak\n')
-    (root / 'pyproject.toml').write_text('[project]\nname = "scratch"\nversion = "0"\n[dependency-groups]\ndev = ["pytest"]\n')
-    return root
-
-
-async def demo(task: str) -> None:
-    from pydantic_ai_harness.coder import DEFAULT_ALLOWED_COMMANDS, Coder
-    from rich import print
-
-    repo = scratch_repo()
-    guard = JevShellGuard()
-    agent = Agent(
-        'anthropic:claude-fable-5',
-        # Coder's allowlist only checks the first word of a command. Adding `rm` makes deletion Jev's call.
-        capabilities=[Coder(repo, allowed_commands=[*DEFAULT_ALLOWED_COMMANDS, 'rm']), guard],
-        output_type=[str, DeferredToolRequests],
-    )
-    print(f'[bold]{task}[/]\nscratch repo: {repo}\n')
-
-    async with agent:
-        result = await agent.run(task)
-        while isinstance(result.output, DeferredToolRequests):  # Jev wants a human
-            approvals = {}
-            for call in result.output.approvals:
-                meta = result.output.metadata[call.tool_call_id]
-                print(f'[yellow]approval needed[/] {meta["command"]!r}  jev={meta["choice"]} confidence={meta["confidence"]:.2f}')
-                answer = await asyncio.to_thread(input, '  allow? [y/N] ')
-                approvals[call.tool_call_id] = answer.strip().lower() == 'y'
-            result = await agent.run(message_history=result.all_messages(), deferred_tool_results=result.output.build_results(approvals=approvals))
-
-    print(f'\n[bold]agent:[/] {result.output}\n')
-    colour = {'run': 'green', 'reject': 'red', 'approval_needed': 'yellow'}
-    for d in guard.decisions:
-        print(f'[{colour[d.verdict]}]{d.verdict:16}[/] {d.confidence:.2f}  {d.latency_ms:4.0f} ms  {d.command}')
-    print(f'\n{len(guard.decisions)} decisions, total Jev cost ${sum(d.cost_usd for d in guard.decisions):.5f}')
-
-
-if __name__ == '__main__':
-    for key in ('TYPESAFE_API_KEY', 'ANTHROPIC_API_KEY'):
-        if not os.environ.get(key):
-            sys.exit(f'Set {key} first.')
-    asyncio.run(demo(' '.join(sys.argv[1:]) or 'Remove the stale build artifacts (build/ and *.pyc), then run `uv run pytest -q` and report what failed. Do not fix anything.'))

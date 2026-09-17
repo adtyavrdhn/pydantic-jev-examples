@@ -3,12 +3,15 @@
 Screen the user's prompt with Jev before the model sees it. A declined prompt ends the run
 with a refusal and costs no LLM tokens.
 
+`input_guard.py` is the capability, under 50 lines. `demo.py` runs prompts through it.
+
 ## Run it
 
 ```bash
+git clone https://github.com/adtyavrdhn/pydantic-jev-examples && cd pydantic-jev-examples/input_guard
 export TYPESAFE_API_KEY=...
-uv run https://raw.githubusercontent.com/adtyavrdhn/pydantic-jev-examples/main/input_guard/input_guard.py
-uv run input_guard.py "a prompt of your own"
+uv run demo.py
+uv run demo.py "a prompt of your own"
 ```
 
 The demo runs six prompts through the guard with Pydantic AI's `TestModel` standing in for

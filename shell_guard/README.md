@@ -3,12 +3,15 @@
 Ask Jev before a coding agent runs a shell command: **run**, **reject**, or **approval
 needed**, with a calibrated confidence.
 
+`shell_guard.py` is the capability, about 120 lines. `demo.py` plugs it into a `Coder()` agent.
+
 ## Run it
 
 ```bash
+git clone https://github.com/adtyavrdhn/pydantic-jev-examples && cd pydantic-jev-examples/shell_guard
 export TYPESAFE_API_KEY=... ANTHROPIC_API_KEY=...
-uv run https://raw.githubusercontent.com/adtyavrdhn/pydantic-jev-examples/main/shell_guard/shell_guard.py
-uv run shell_guard.py "delete the build directory and push to main"
+uv run demo.py
+uv run demo.py "delete the build directory and push to main"
 ```
 
 The demo builds a throwaway repo with a stale `build/` directory, a failing test, and a fake
