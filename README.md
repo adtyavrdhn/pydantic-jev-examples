@@ -59,31 +59,38 @@ from input_guard import jev_says_ok
 agent = Agent('anthropic:claude-fable-5', capabilities=[InputGuardrail(guard=jev_says_ok, parallel=True)])
 ```
 
-Add another and the agent gets a shell, where every command is judged before it runs. Jev
-either lets it run, rejects it, or pauses and asks you:
+Add another and the agent gets a shell, where every command is judged before it runs. This
+is the harness's `ToolGuardrail`, again with Jev as the guard function. Jev either lets the
+command run, blocks it, or pauses and asks you:
 
 ```python
 from pydantic_ai import DeferredToolRequests
-from pydantic_ai_harness import Coder, InputGuardrail
+from pydantic_ai_harness import Coder, InputGuardrail, ToolGuardrail
 from input_guard import jev_says_ok
-from shell_guard import JevShellGuard
+from shell_guard import SHELL_TOOLS, jev_decides
 
 agent = Agent(
     'anthropic:claude-fable-5',
-    capabilities=[Coder('.'), InputGuardrail(guard=jev_says_ok, parallel=True), JevShellGuard()],
+    capabilities=[
+        Coder('.'),
+        InputGuardrail(guard=jev_says_ok, parallel=True),
+        ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS),
+    ],
     output_type=[str, DeferredToolRequests],  # so a run can pause and hand you a command
 )
 ```
 
-Each guard is one short file you can copy into your project as is.
+Each guard is one short function you can copy into your project as is. `OutputGuardrail`
+takes the same kind of function, and there is a snippet for it in
+[`input_guard/`](input_guard/#output-and-tool-guardrails).
 
 ## Where a Jev question can go
 
 | Point in the run | The question | What you do with the answer | Example |
 |---|---|---|---|
 | `before_model_request` | Should this prompt reach the model? | Raise `SkipModelRequest`, so no tokens are spent | [`input_guard/`](input_guard/) |
-| `before_tool_execute` | Should this tool call happen? | Raise `ModelRetry` to reject, or `ApprovalRequired` to pause for a human | [`shell_guard/`](shell_guard/) |
-| `after_run` | Is this output ok? | Replace it, or run again | not here yet |
+| `before_tool_execute` | Should this tool call happen? | Block it, or pause for a human. The harness `ToolGuardrail` does the raising | [`shell_guard/`](shell_guard/) |
+| `after_run` | Is this output ok? | Send it back to the model. The harness `OutputGuardrail` does the raising | [snippet in `input_guard/`](input_guard/#output-and-tool-guardrails) |
 | `after_node_run` | Is the agent going in circles? | Stop early | not here yet |
 | Your own loop | Should the bird flap this tick? | Flap or not | [`flappy_bird/`](flappy_bird/) |
 | A Pydantic Evals evaluator | Does this case pass the rubric? | Pass or fail | [`jev_judge/`](jev_judge/) |
@@ -97,7 +104,7 @@ you would think, even at game tick speeds.
 | Example | The question Jev answers | Keys needed |
 |---|---|---|
 | [`input_guard/`](input_guard/) | Should this prompt reach the model at all? | TypeSafe |
-| [`shell_guard/`](shell_guard/) | Should this command run, be rejected, or wait for a human? | TypeSafe, Anthropic |
+| [`shell_guard/`](shell_guard/) | Should this command run, be blocked, or wait for a human? | TypeSafe, Anthropic |
 | [`flappy_bird/`](flappy_bird/) | Should the bird flap on this tick? Claude coaches between rounds. | TypeSafe, Anthropic (or none with `--offline`) |
 | [`jev_judge/`](jev_judge/) | Does this eval case pass the rubric? A number, not a reason. | TypeSafe (Anthropic too with `--compare`) |
 

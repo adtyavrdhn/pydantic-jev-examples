@@ -15,7 +15,6 @@ import sys
 
 from rich.console import Console
 from rich.table import Table
-from typesafe_sdk import AsyncTypeSafeClient
 
 from shell_guard import ask_jev
 
@@ -100,9 +99,8 @@ async def main(argv: list[str]) -> None:
     argv = [a for a in argv if a != '--sequential']
     cases = [(c, None) for c in argv] or [(c, label) for label, cmds in LABELED.items() for c in cmds]
 
-    async with AsyncTypeSafeClient() as client:
-        calls = [ask_jev(client, c, task=TASK, recent=['git status'], threshold=0.75) for c, _ in cases]
-        decisions = [await c for c in calls] if sequential else await asyncio.gather(*calls)
+    calls = [ask_jev(c, task=TASK, recent=['git status']) for c, _ in cases]
+    decisions = [await c for c in calls] if sequential else await asyncio.gather(*calls)
 
     table = Table('command', 'verdict', 'confidence', 'irreversible', 'ms', 'expected', title='Jev ShellGuard')
     correct = 0

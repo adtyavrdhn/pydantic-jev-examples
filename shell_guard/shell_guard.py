@@ -1,7 +1,12 @@
-"""JevShellGuard: ask Jev before a Pydantic AI agent runs a shell command.
+"""Jev as the guard function for Pydantic AI Harness's ToolGuardrail, in front of a shell.
 
-    agent = Agent('anthropic:claude-fable-5', capabilities=[Coder('.'), JevShellGuard()])
+    agent = Agent(
+        'anthropic:claude-fable-5',
+        capabilities=[Coder('.'), ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS)],
+        output_type=[str, DeferredToolRequests],
+    )
 
+Every shell command gets one Jev request before it runs: run it, reject it, or ask a human.
 Jev (https://typesafe.ai) does not generate text. It gets state and a typed question and
 returns an answer with a calibrated confidence. One request per command, a fraction of a cent.
 """
@@ -9,17 +14,20 @@ returns an answer with a calibrated confidence. One request per command, a fract
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import cache
 from typing import Literal
 
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.exceptions import ApprovalRequired, ModelRetry
 from pydantic_ai.messages import ModelResponse, ToolCallPart
-from pydantic_ai.tools import ToolDefinition
+from pydantic_ai_harness import GuardrailResult
+from pydantic_ai_harness.guardrails import ToolCallInfo
 from typesafe_sdk import AsyncTypeSafeClient, Choice, ChoiceAnswer, Noul, NoulAnswer
 
 Verdict = Literal['run', 'reject', 'approval_needed']
+
+SHELL_TOOLS = ('run_command', 'start_command')  # the harness Shell() tools that take a command
+THRESHOLD = 0.75  # below this confidence, anything becomes approval_needed
 
 # The criteria are the whole prompt. Concrete situations work best.
 CRITERIA = {
@@ -52,6 +60,11 @@ INSTRUCTIONS = {
 }
 
 
+@cache
+def client() -> AsyncTypeSafeClient:
+    return AsyncTypeSafeClient()  # reads TYPESAFE_API_KEY
+
+
 @dataclass
 class Decision:
     command: str
@@ -67,12 +80,10 @@ class Decision:
         return self.input_tokens * 42 / 1e9  # $42 per billion input tokens, output is free
 
 
-async def ask_jev(
-    client: AsyncTypeSafeClient, command: str, *, task: str, recent: list[str], threshold: float
-) -> Decision:
+async def ask_jev(command: str, *, task: str, recent: list[str], threshold: float = THRESHOLD) -> Decision:
     """One request, two questions: how to handle the command, and whether it is irreversible."""
     started = time.perf_counter()
-    response = await client.system_one(
+    response = await client().system_one(
         state={'task': task, 'recent_commands': recent, 'command': command},
         questions={
             'handling': Choice(instructions=INSTRUCTIONS, criteria=CRITERIA),
@@ -96,45 +107,32 @@ async def ask_jev(
     )
 
 
-@dataclass
-class JevShellGuard(AbstractCapability[object]):
-    """Before every shell command: run it, reject it, or pause the run for a human."""
+decisions: list[Decision] = []  # every decision this process made, so a demo can print them
 
-    threshold: float = 0.75  # below this confidence, anything becomes approval_needed
-    tool_names: tuple[str, ...] = ('run_command', 'start_command', 'shell')
-    decisions: list[Decision] = field(default_factory=list[Decision])
-    client: AsyncTypeSafeClient = field(default_factory=AsyncTypeSafeClient)
 
-    async def before_tool_execute(
-        self, ctx: RunContext[object], *, call: ToolCallPart, tool_def: ToolDefinition, args: dict[str, object]
-    ) -> dict[str, object]:
-        if call.tool_name not in self.tool_names or ctx.tool_call_approved:
-            return args  # not a shell call, or a human already approved this exact call
+async def jev_decides(ctx: RunContext[object], call: ToolCallInfo) -> GuardrailResult:
+    """The guard function. Hand it to `ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS)`."""
+    if ctx.tool_call_approved:
+        return GuardrailResult.allow()  # a human already approved this exact call
 
-        command = str(args.get('command', ''))
-        task = ctx.prompt if isinstance(ctx.prompt, str) else ''
-        recent = [
-            str(part.args_as_dict().get('command', ''))
-            for message in ctx.messages
-            if isinstance(message, ModelResponse)
-            for part in message.parts
-            if isinstance(part, ToolCallPart) and part.tool_name in self.tool_names
-        ][-5:]
+    command = str(call.args.get('command', ''))
+    task = ctx.prompt if isinstance(ctx.prompt, str) else ''
+    recent = [
+        str(part.args_as_dict().get('command', ''))
+        for message in ctx.messages
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart) and part.tool_name in SHELL_TOOLS
+    ][-5:]
 
-        decision = await ask_jev(self.client, command, task=task, recent=recent, threshold=self.threshold)
-        self.decisions.append(decision)
+    decision = await ask_jev(command, task=task, recent=recent)
+    decisions.append(decision)
 
-        if decision.verdict == 'reject':
-            raise ModelRetry(
-                f'ShellGuard blocked this command (confidence {decision.confidence:.2f}). Find another way without destructive or exfiltrating commands.'
-            )
-        if decision.verdict == 'approval_needed':
-            raise ApprovalRequired(
-                metadata={
-                    'command': command,
-                    'choice': decision.choice,
-                    'confidence': decision.confidence,
-                    'irreversible': decision.irreversible,
-                }
-            )
-        return args
+    if decision.verdict == 'reject':
+        return GuardrailResult.block(
+            f'Blocked by the shell guard (confidence {decision.confidence:.2f}). '
+            'Find another way without destructive or exfiltrating commands.'
+        )
+    if decision.verdict == 'approval_needed':
+        return GuardrailResult.approve()  # the run pauses and hands the command to a human
+    return GuardrailResult.allow()

@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["pydantic-ai-slim[anthropic]", "pydantic-ai-harness", "typesafe-sdk", "rich"]
 # ///
-"""A Coder() agent with JevShellGuard in front of its shell.
+"""A Coder() agent with a harness ToolGuardrail in front of its shell, and Jev as the guard.
 
 export TYPESAFE_API_KEY=... ANTHROPIC_API_KEY=...
 uv run demo.py
@@ -16,10 +16,11 @@ import tempfile
 from pathlib import Path
 
 from pydantic_ai import Agent, DeferredToolRequests, ToolApproved, ToolDenied
+from pydantic_ai_harness import ToolGuardrail
 from pydantic_ai_harness.coder import DEFAULT_ALLOWED_COMMANDS, Coder
 from rich import print
 
-from shell_guard import JevShellGuard
+from shell_guard import SHELL_TOOLS, decisions, jev_decides
 
 
 def scratch_repo() -> Path:
@@ -41,11 +42,13 @@ def scratch_repo() -> Path:
 
 async def demo(task: str) -> None:
     repo = scratch_repo()
-    guard = JevShellGuard()
     agent = Agent(
         'anthropic:claude-fable-5',
-        # Coder's allowlist only checks the first word of a command. Adding `rm` makes deletion Jev's call.
-        capabilities=[Coder(repo, allowed_commands=[*DEFAULT_ALLOWED_COMMANDS, 'rm']), guard],
+        capabilities=[
+            # Coder's allowlist only checks the first word of a command. Adding `rm` makes deletion Jev's call.
+            Coder(repo, allowed_commands=[*DEFAULT_ALLOWED_COMMANDS, 'rm']),
+            ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS),
+        ],
         output_type=[str, DeferredToolRequests],
     )
     print(f'[bold]{task}[/]\nscratch repo: {repo}\n')
@@ -55,10 +58,9 @@ async def demo(task: str) -> None:
         while isinstance(result.output, DeferredToolRequests):  # Jev wants a human
             approvals: dict[str, ToolApproved | ToolDenied | bool] = {}
             for call in result.output.approvals:
-                meta = result.output.metadata[call.tool_call_id]
-                print(
-                    f'[yellow]approval needed[/] {meta["command"]!r}  jev={meta["choice"]} confidence={meta["confidence"]:.2f}'
-                )
+                command = str(call.args_as_dict().get('command', ''))
+                jev = next(d for d in reversed(decisions) if d.command == command)
+                print(f'[yellow]approval needed[/] {command!r}  jev={jev.choice} confidence={jev.confidence:.2f}')
                 answer = await asyncio.to_thread(input, '  allow? [y/N] ')
                 approvals[call.tool_call_id] = answer.strip().lower() == 'y'
             result = await agent.run(
@@ -68,9 +70,9 @@ async def demo(task: str) -> None:
 
     print(f'\n[bold]agent:[/] {result.output}\n')
     colour = {'run': 'green', 'reject': 'red', 'approval_needed': 'yellow'}
-    for d in guard.decisions:
+    for d in decisions:
         print(f'[{colour[d.verdict]}]{d.verdict:16}[/] {d.confidence:.2f}  {d.latency_ms:4.0f} ms  {d.command}')
-    print(f'\n{len(guard.decisions)} decisions, total Jev cost ${sum(d.cost_usd for d in guard.decisions):.5f}')
+    print(f'\n{len(decisions)} decisions, total Jev cost ${sum(d.cost_usd for d in decisions):.5f}')
 
 
 if __name__ == '__main__':
