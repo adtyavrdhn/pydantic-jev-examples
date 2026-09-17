@@ -7,6 +7,7 @@ dependencies = [
     "logfire>=4",
     "pydantic-ai-harness",
     "pydantic-ai-slim[anthropic]>=2",
+    "pydantic-evals>=2",
     "rich",
     "typesafe-sdk>=0.6",
 ]
@@ -27,7 +28,7 @@ package = false
 line-length = 120
 target-version = "py312"
 include = ["**/*.py"]
-src = ["input_guard", "shell_guard", "flappy_bird"]
+src = ["input_guard", "shell_guard", "flappy_bird", "jev_judge"]
 
 [tool.ruff.lint]
 preview = true  # For `PLW1514`
@@ -82,7 +83,7 @@ reportMissingTypeStubs = false
 reportUnnecessaryIsInstance = false
 reportUnnecessaryTypeIgnoreComment = true
 reportMissingModuleSource = false
-include = ["input_guard", "shell_guard", "flappy_bird"]
+include = ["input_guard", "shell_guard", "flappy_bird", "jev_judge"]
 venvPath = "."
 venv = ".venv"
 # Each example folder is its own little program, so `from shell_guard import ...` resolves
@@ -91,4 +92,5 @@ executionEnvironments = [
     { root = "input_guard" },
     { root = "shell_guard" },
     { root = "flappy_bird" },
+    { root = "jev_judge" },
 ]
