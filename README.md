@@ -97,7 +97,7 @@ you would think, even at game tick speeds.
 | [`input_guard/`](input_guard/) | Should this prompt reach the model at all? | TypeSafe |
 | [`shell_guard/`](shell_guard/) | Should this command run, be rejected, or wait for a human? | TypeSafe, Anthropic |
 | [`flappy_bird/`](flappy_bird/) | Should the bird flap on this tick? Claude coaches between rounds. | TypeSafe, Anthropic (or none with `--offline`) |
-| [`jev_judge/`](jev_judge/) | Does this eval case pass the rubric? | TypeSafe (Anthropic too with `--compare`) |
+| [`jev_judge/`](jev_judge/) | Does this eval case pass the rubric? A number, not a reason. | TypeSafe (Anthropic too with `--compare`) |
 
 ## Run one
 

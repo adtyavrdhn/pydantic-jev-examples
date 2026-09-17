@@ -1,13 +1,13 @@
 # Jev as a judge
 
-Use Jev to grade your evals instead of an LLM. It makes one call per case, and each call is
-fast and costs almost nothing.
+I decided to play with using Jev as an evaluator. It makes one call per case, and each call is
+fast and costs almost nothing. Playing with it is fun and here is what we did.
 
 ## Use it
 
 Everything is in `jev_judge.py`, about 50 lines. It is a normal
-[Pydantic Evals](https://ai.pydantic.dev/evals/) evaluator, so you can put it anywhere you would
-put `LLMJudge`:
+[Pydantic Evals](https://ai.pydantic.dev/evals/) evaluator, so it plugs in the same way
+`LLMJudge` does:
 
 ```python
 from pydantic_evals import Dataset
@@ -70,6 +70,18 @@ answer of the whole run. Claude failed it and explained that it was correct but 
 I had set the threshold to 0.75, Jev would have failed it too.
 
 So Jev gives you a number for a fraction of a cent, and Claude gives you a reason.
+
+## What you lose
+
+Pydantic Evals' `LLMJudge` is a yes or no evaluator at heart, but it also asks the model for a
+sentence saying why, and that sentence ends up in the report. Jev gives you the same pass or
+fail without the sentence. You get a probability instead.
+
+For finding the cases worth a look, the probability does most of that job, since the close
+calls sit near the threshold. If you want prose on those cases, run an LLM judge on just the
+fails and close calls. And if you want to know which part of the rubric failed, split the
+rubric into checks and ask Jev one yes or no per check. None of that is built here. This folder
+is the plain version, one question per case.
 
 ## How it works
 
