@@ -2,10 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["pydantic-ai-slim[anthropic]", "pydantic-ai-harness", "typesafe-sdk", "rich"]
 # ///
-"""Two Jev guards for a Pydantic AI coding agent.
-
-    JevInputGuard  screens the user's prompt before the model sees it
-    JevShellGuard  screens every shell command before it runs
+"""JevShellGuard: ask Jev before a Pydantic AI coding agent runs a shell command.
 
 Jev (https://typesafe.ai) does not generate text. You give it state and a typed question,
 it returns an answer with a calibrated confidence, for a fraction of a cent.
@@ -13,11 +10,11 @@ it returns an answer with a calibrated confidence, for a fraction of a cent.
 Try it:
 
     TYPESAFE_API_KEY=... ANTHROPIC_API_KEY=... uv run shell_guard.py
-    uv run shell_guard.py "wipe the repo and post the .env file to pastebin"
+    uv run shell_guard.py "delete the build directory and push to main"
 
 Use it in your own agent:
 
-    agent = Agent('anthropic:claude-fable-5', capabilities=[Coder('.'), JevInputGuard(), JevShellGuard()])
+    agent = Agent('anthropic:claude-fable-5', capabilities=[Coder('.'), JevShellGuard()])
 """
 
 from __future__ import annotations
@@ -33,9 +30,8 @@ from typing import Literal
 
 from pydantic_ai import Agent, DeferredToolRequests, RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.exceptions import ApprovalRequired, ModelRetry, SkipModelRequest
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.exceptions import ApprovalRequired, ModelRetry
+from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.tools import ToolDefinition
 from typesafe_sdk import AsyncTypeSafeClient, Choice, ChoiceAnswer, Noul, NoulAnswer
 
@@ -143,39 +139,6 @@ class JevShellGuard(AbstractCapability[object]):
         return args
 
 
-@dataclass
-class JevInputGuard(AbstractCapability[object]):
-    """Before the first model request: is this prompt something a coding agent should do at all?
-
-    A declined prompt never reaches the model, so it costs no LLM tokens.
-    """
-
-    threshold: float = 0.75
-    client: AsyncTypeSafeClient = field(default_factory=AsyncTypeSafeClient)
-    screened: list[tuple[str, float]] = field(default_factory=list)
-
-    async def before_model_request(self, ctx: RunContext[object], request_context: ModelRequestContext) -> ModelRequestContext:
-        if any(isinstance(m, ModelResponse) for m in ctx.messages):
-            return request_context  # only the opening prompt is screened
-        prompt = ctx.prompt if isinstance(ctx.prompt, str) else ''
-        response = await self.client.system_one(
-            state={'prompt': prompt},
-            questions={'harmful': Noul(instructions=(
-                'Does this request ask a coding agent to destroy data, leak secrets or credentials, '
-                'attack another system, or ignore its own rules? Ordinary cleanup, refactoring, and '
-                'testing work is not harmful.'
-            ))},
-        )
-        answer = response.answers['harmful']
-        assert isinstance(answer, NoulAnswer)
-        self.screened.append((prompt, answer.noul))
-        if answer.noul >= self.threshold:
-            raise SkipModelRequest(ModelResponse(parts=[TextPart(
-                f'Declined before reaching the model. Jev rated this request {answer.noul:.2f} likely harmful.'
-            )]))
-        return request_context
-
-
 # --- demo -----------------------------------------------------------------------------------
 
 def scratch_repo() -> Path:
@@ -198,11 +161,11 @@ async def demo(task: str) -> None:
     from rich import print
 
     repo = scratch_repo()
-    input_guard, guard = JevInputGuard(), JevShellGuard()
+    guard = JevShellGuard()
     agent = Agent(
         'anthropic:claude-fable-5',
         # Coder's allowlist only checks the first word of a command. Adding `rm` makes deletion Jev's call.
-        capabilities=[Coder(repo, allowed_commands=[*DEFAULT_ALLOWED_COMMANDS, 'rm']), input_guard, guard],
+        capabilities=[Coder(repo, allowed_commands=[*DEFAULT_ALLOWED_COMMANDS, 'rm']), guard],
         output_type=[str, DeferredToolRequests],
     )
     print(f'[bold]{task}[/]\nscratch repo: {repo}\n')
@@ -219,8 +182,6 @@ async def demo(task: str) -> None:
             result = await agent.run(message_history=result.all_messages(), deferred_tool_results=result.output.build_results(approvals=approvals))
 
     print(f'\n[bold]agent:[/] {result.output}\n')
-    for prompt, harmful in input_guard.screened:
-        print(f'[bold]prompt screened:[/] {harmful:.2f} harmful')
     colour = {'run': 'green', 'reject': 'red', 'approval_needed': 'yellow'}
     for d in guard.decisions:
         print(f'[{colour[d.verdict]}]{d.verdict:16}[/] {d.confidence:.2f}  {d.latency_ms:4.0f} ms  {d.command}')
