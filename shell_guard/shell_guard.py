@@ -2,7 +2,7 @@
 
     agent = Agent(
         'anthropic:claude-fable-5',
-        capabilities=[Coder('.'), ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS)],
+        capabilities=[Coder('.'), ToolGuardrail(guard=jev_decides)],
         output_type=[str, DeferredToolRequests],
     )
 
@@ -26,7 +26,7 @@ from typesafe_sdk import AsyncTypeSafeClient, Choice, ChoiceAnswer, Noul, NoulAn
 
 Verdict = Literal['run', 'reject', 'approval_needed']
 
-SHELL_TOOLS = ('run_command', 'start_command')  # the harness Shell() tools that take a command
+SHELL_TOOLS = ('run_command', 'start_command')  # the harness Shell() tools that take a command; the rest pass through
 THRESHOLD = 0.75  # below this confidence, anything becomes approval_needed
 
 # The criteria are the whole prompt. Concrete situations work best.
@@ -111,9 +111,9 @@ decisions: list[Decision] = []  # every decision this process made, so a demo ca
 
 
 async def jev_decides(ctx: RunContext[object], call: ToolCallInfo) -> GuardrailResult:
-    """The guard function. Hand it to `ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS)`."""
-    if ctx.tool_call_approved:
-        return GuardrailResult.allow()  # a human already approved this exact call
+    """The guard function. Hand it to `ToolGuardrail(guard=jev_decides)`."""
+    if call.name not in SHELL_TOOLS or ctx.tool_call_approved:
+        return GuardrailResult.allow()  # not a shell command, or a human already approved this exact call
 
     command = str(call.args.get('command', ''))
     task = ctx.prompt if isinstance(ctx.prompt, str) else ''

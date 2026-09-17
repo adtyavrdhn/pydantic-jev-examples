@@ -67,14 +67,14 @@ command run, blocks it, or pauses and asks you:
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai_harness import Coder, InputGuardrail, ToolGuardrail
 from input_guard import jev_says_ok
-from shell_guard import SHELL_TOOLS, jev_decides
+from shell_guard import jev_decides
 
 agent = Agent(
     'anthropic:claude-fable-5',
     capabilities=[
         Coder('.'),
         InputGuardrail(guard=jev_says_ok, parallel=True),
-        ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS),
+        ToolGuardrail(guard=jev_decides),
     ],
     output_type=[str, DeferredToolRequests],  # so a run can pause and hand you a command
 )

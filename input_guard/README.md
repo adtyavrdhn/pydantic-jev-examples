@@ -128,9 +128,9 @@ command a `Coder()` agent wants to run.
 
 ```python
 from pydantic_ai_harness import Coder, ToolGuardrail
-from shell_guard import SHELL_TOOLS, jev_decides
+from shell_guard import jev_decides
 
-agent = Agent('anthropic:claude-fable-5', capabilities=[Coder('.'), ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS)])
+agent = Agent('anthropic:claude-fable-5', capabilities=[Coder('.'), ToolGuardrail(guard=jev_decides)])
 ```
 
 ## Without the harness

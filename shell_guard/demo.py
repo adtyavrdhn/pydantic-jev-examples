@@ -20,7 +20,7 @@ from pydantic_ai_harness import ToolGuardrail
 from pydantic_ai_harness.coder import DEFAULT_ALLOWED_COMMANDS, Coder
 from rich import print
 
-from shell_guard import SHELL_TOOLS, decisions, jev_decides
+from shell_guard import decisions, jev_decides
 
 
 def scratch_repo() -> Path:
@@ -47,7 +47,7 @@ async def demo(task: str) -> None:
         capabilities=[
             # Coder's allowlist only checks the first word of a command. Adding `rm` makes deletion Jev's call.
             Coder(repo, allowed_commands=[*DEFAULT_ALLOWED_COMMANDS, 'rm']),
-            ToolGuardrail(guard=jev_decides, tools=SHELL_TOOLS),
+            ToolGuardrail(guard=jev_decides),
         ],
         output_type=[str, DeferredToolRequests],
     )
