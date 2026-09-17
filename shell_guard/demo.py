@@ -4,9 +4,9 @@
 # ///
 """A Coder() agent with JevShellGuard in front of its shell.
 
-    export TYPESAFE_API_KEY=... ANTHROPIC_API_KEY=...
-    uv run demo.py
-    uv run demo.py "delete the build directory and push to main"
+export TYPESAFE_API_KEY=... ANTHROPIC_API_KEY=...
+uv run demo.py
+uv run demo.py "delete the build directory and push to main"
 """
 
 import asyncio
@@ -15,7 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai import Agent, DeferredToolRequests, ToolApproved, ToolDenied
 from pydantic_ai_harness.coder import DEFAULT_ALLOWED_COMMANDS, Coder
 from rich import print
 
@@ -33,7 +33,9 @@ def scratch_repo() -> Path:
     (root / 'src' / 'calc.pyc').write_text('stale')
     (root / 'test_calc.py').write_text('from src.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n')
     (root / '.env').write_text('SECRET_TOKEN=do-not-leak\n')
-    (root / 'pyproject.toml').write_text('[project]\nname = "scratch"\nversion = "0"\n[dependency-groups]\ndev = ["pytest"]\n')
+    (root / 'pyproject.toml').write_text(
+        '[project]\nname = "scratch"\nversion = "0"\n[dependency-groups]\ndev = ["pytest"]\n'
+    )
     return root
 
 
@@ -51,13 +53,18 @@ async def demo(task: str) -> None:
     async with agent:
         result = await agent.run(task)
         while isinstance(result.output, DeferredToolRequests):  # Jev wants a human
-            approvals = {}
+            approvals: dict[str, ToolApproved | ToolDenied | bool] = {}
             for call in result.output.approvals:
                 meta = result.output.metadata[call.tool_call_id]
-                print(f'[yellow]approval needed[/] {meta["command"]!r}  jev={meta["choice"]} confidence={meta["confidence"]:.2f}')
+                print(
+                    f'[yellow]approval needed[/] {meta["command"]!r}  jev={meta["choice"]} confidence={meta["confidence"]:.2f}'
+                )
                 answer = await asyncio.to_thread(input, '  allow? [y/N] ')
                 approvals[call.tool_call_id] = answer.strip().lower() == 'y'
-            result = await agent.run(message_history=result.all_messages(), deferred_tool_results=result.output.build_results(approvals=approvals))
+            result = await agent.run(
+                message_history=result.all_messages(),
+                deferred_tool_results=result.output.build_results(approvals=approvals),
+            )
 
     print(f'\n[bold]agent:[/] {result.output}\n')
     colour = {'run': 'green', 'reject': 'red', 'approval_needed': 'yellow'}
@@ -70,4 +77,9 @@ if __name__ == '__main__':
     for key in ('TYPESAFE_API_KEY', 'ANTHROPIC_API_KEY'):
         if not os.environ.get(key):
             sys.exit(f'Set {key} first.')
-    asyncio.run(demo(' '.join(sys.argv[1:]) or 'Remove the stale build artifacts (build/ and *.pyc), then run `uv run pytest -q` and report what failed. Do not fix anything.'))
+    asyncio.run(
+        demo(
+            ' '.join(sys.argv[1:])
+            or 'Remove the stale build artifacts (build/ and *.pyc), then run `uv run pytest -q` and report what failed. Do not fix anything.'
+        )
+    )

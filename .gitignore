@@ -1,3 +1,5 @@
 __pycache__/
 .venv/
 .env
+.ruff_cache/
+uv.lock

@@ -1,0 +1,94 @@
+[project]
+name = "pydantic-jev-examples"
+version = "0"
+description = "Pydantic AI agents made stronger with Jev"
+requires-python = ">=3.12"
+dependencies = [
+    "logfire>=4",
+    "pydantic-ai-harness",
+    "pydantic-ai-slim[anthropic]>=2",
+    "rich",
+    "typesafe-sdk>=0.6",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.408",
+    "ruff>=0.14.14",
+]
+
+[tool.uv]
+package = false
+
+# Lint and type-check settings copied from pydantic-ai's pyproject.toml, so these examples
+# pass the same checks. Only the file lists and the Python version differ.
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+include = ["**/*.py"]
+src = ["input_guard", "shell_guard", "flappy_bird"]
+
+[tool.ruff.lint]
+preview = true  # For `PLW1514`
+explicit-preview-rules = true
+select = ["E4", "E7", "E9", "F"]
+extend-select = [
+    "Q",
+    "RUF100",
+    "RUF018", # https://docs.astral.sh/ruff/rules/assignment-in-assert/
+    "RUF043", # https://docs.astral.sh/ruff/rules/pytest-raises-ambiguous-pattern/
+    "C90",
+    "UP",
+    "I",
+    "D",
+    "TID251",
+    "PLW1514", # https://docs.astral.sh/ruff/rules/unspecified-encoding/
+    "PGH003", # https://docs.astral.sh/ruff/rules/blanket-type-ignore/
+]
+flake8-quotes = { inline-quotes = "single", multiline-quotes = "double" }
+mccabe = { max-complexity = 15 }
+ignore = [
+    "D100", # ignore missing docstring in module
+    "D102", # ignore missing docstring in public method
+    "D104", # ignore missing docstring in public package
+    "D105", # ignore missing docstring in magic methods
+    "D107", # ignore missing docstring in __init__ methods
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.TypedDict".msg = "Use typing_extensions.TypedDict instead."
+"typing.assert_never".msg = "Use typing_extensions.assert_never instead."
+"asyncio.Lock".msg = "Use anyio.Lock instead."
+
+[tool.ruff.format]
+docstring-code-format = false
+quote-style = "single"
+
+[tool.ruff.lint.per-file-ignores]
+# Same relaxation pydantic-ai gives its own examples/ folder.
+"**/*.py" = ["D101", "D103"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+reportUnnecessaryIsInstance = false
+reportUnnecessaryTypeIgnoreComment = true
+reportMissingModuleSource = false
+include = ["input_guard", "shell_guard", "flappy_bird"]
+venvPath = "."
+venv = ".venv"
+# Each example folder is its own little program, so `from shell_guard import ...` resolves
+# from inside that folder, the way `uv run demo.py` sees it.
+executionEnvironments = [
+    { root = "input_guard" },
+    { root = "shell_guard" },
+    { root = "flappy_bird" },
+]

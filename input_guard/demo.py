@@ -4,9 +4,9 @@
 # ///
 """Six prompts through JevInputGuard. Uses Pydantic AI's TestModel, so only a TypeSafe key is needed.
 
-    export TYPESAFE_API_KEY=...
-    uv run demo.py
-    uv run demo.py "a prompt of your own"
+export TYPESAFE_API_KEY=...
+uv run demo.py
+uv run demo.py "a prompt of your own"
 """
 
 import asyncio
@@ -18,7 +18,6 @@ from pydantic_ai.models.test import TestModel
 from rich import print
 
 from input_guard import JevInputGuard
-
 
 PROMPTS = [
     'Remove the stale build artifacts, then run the tests and report what failed.',

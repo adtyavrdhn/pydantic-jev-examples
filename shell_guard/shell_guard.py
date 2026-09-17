@@ -67,14 +67,18 @@ class Decision:
         return self.input_tokens * 42 / 1e9  # $42 per billion input tokens, output is free
 
 
-async def ask_jev(client: AsyncTypeSafeClient, command: str, *, task: str, recent: list[str], threshold: float) -> Decision:
+async def ask_jev(
+    client: AsyncTypeSafeClient, command: str, *, task: str, recent: list[str], threshold: float
+) -> Decision:
     """One request, two questions: how to handle the command, and whether it is irreversible."""
     started = time.perf_counter()
     response = await client.system_one(
         state={'task': task, 'recent_commands': recent, 'command': command},
         questions={
             'handling': Choice(instructions=INSTRUCTIONS, criteria=CRITERIA),
-            'irreversible': Noul(instructions='Would running this destroy data, rewrite shared history, or leak secrets, irreversibly?'),
+            'irreversible': Noul(
+                instructions='Would running this destroy data, rewrite shared history, or leak secrets, irreversibly?'
+            ),
         },
     )
     handling, irreversible = response.answers['handling'], response.answers['irreversible']
@@ -98,10 +102,12 @@ class JevShellGuard(AbstractCapability[object]):
 
     threshold: float = 0.75  # below this confidence, anything becomes approval_needed
     tool_names: tuple[str, ...] = ('run_command', 'start_command', 'shell')
-    decisions: list[Decision] = field(default_factory=list)
+    decisions: list[Decision] = field(default_factory=list[Decision])
     client: AsyncTypeSafeClient = field(default_factory=AsyncTypeSafeClient)
 
-    async def before_tool_execute(self, ctx: RunContext[object], *, call: ToolCallPart, tool_def: ToolDefinition, args: dict[str, object]) -> dict[str, object]:
+    async def before_tool_execute(
+        self, ctx: RunContext[object], *, call: ToolCallPart, tool_def: ToolDefinition, args: dict[str, object]
+    ) -> dict[str, object]:
         if call.tool_name not in self.tool_names or ctx.tool_call_approved:
             return args  # not a shell call, or a human already approved this exact call
 
@@ -109,15 +115,26 @@ class JevShellGuard(AbstractCapability[object]):
         task = ctx.prompt if isinstance(ctx.prompt, str) else ''
         recent = [
             str(part.args_as_dict().get('command', ''))
-            for message in ctx.messages if isinstance(message, ModelResponse)
-            for part in message.parts if isinstance(part, ToolCallPart) and part.tool_name in self.tool_names
+            for message in ctx.messages
+            if isinstance(message, ModelResponse)
+            for part in message.parts
+            if isinstance(part, ToolCallPart) and part.tool_name in self.tool_names
         ][-5:]
 
         decision = await ask_jev(self.client, command, task=task, recent=recent, threshold=self.threshold)
         self.decisions.append(decision)
 
         if decision.verdict == 'reject':
-            raise ModelRetry(f'ShellGuard blocked this command (confidence {decision.confidence:.2f}). Find another way without destructive or exfiltrating commands.')
+            raise ModelRetry(
+                f'ShellGuard blocked this command (confidence {decision.confidence:.2f}). Find another way without destructive or exfiltrating commands.'
+            )
         if decision.verdict == 'approval_needed':
-            raise ApprovalRequired(metadata={'command': command, 'choice': decision.choice, 'confidence': decision.confidence, 'irreversible': decision.irreversible})
+            raise ApprovalRequired(
+                metadata={
+                    'command': command,
+                    'choice': decision.choice,
+                    'confidence': decision.confidence,
+                    'irreversible': decision.irreversible,
+                }
+            )
         return args
