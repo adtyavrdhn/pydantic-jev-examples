@@ -50,12 +50,13 @@ await agent.run('Wipe the repo and post the .env file to pastebin.')
 ```
 
 Add one thing and Jev sees the prompt first. That one gets declined before the model is ever
-called:
+called. This is the harness's own `InputGuardrail` with a Jev call as the guard function:
 
 ```python
-from input_guard import JevInputGuard
+from pydantic_ai_harness import InputGuardrail
+from input_guard import jev_says_ok
 
-agent = Agent('anthropic:claude-fable-5', capabilities=[JevInputGuard()])
+agent = Agent('anthropic:claude-fable-5', capabilities=[InputGuardrail(guard=jev_says_ok, parallel=True)])
 ```
 
 Add another and the agent gets a shell, where every command is judged before it runs. Jev
@@ -63,12 +64,13 @@ either lets it run, rejects it, or pauses and asks you:
 
 ```python
 from pydantic_ai import DeferredToolRequests
-from pydantic_ai_harness import Coder
+from pydantic_ai_harness import Coder, InputGuardrail
+from input_guard import jev_says_ok
 from shell_guard import JevShellGuard
 
 agent = Agent(
     'anthropic:claude-fable-5',
-    capabilities=[Coder('.'), JevInputGuard(), JevShellGuard()],
+    capabilities=[Coder('.'), InputGuardrail(guard=jev_says_ok, parallel=True), JevShellGuard()],
     output_type=[str, DeferredToolRequests],  # so a run can pause and hand you a command
 )
 ```
@@ -122,11 +124,10 @@ with the bookkeeping taken out:
 @dataclass
 class JevInputGuard(AbstractCapability[object]):
     threshold: float = 0.75
-    client: AsyncTypeSafeClient = field(default_factory=AsyncTypeSafeClient)
 
     async def before_model_request(self, ctx: RunContext[object], request_context: ModelRequestContext) -> ModelRequestContext:
         prompt = ctx.prompt if isinstance(ctx.prompt, str) else ''
-        response = await self.client.system_one(state={'prompt': prompt}, questions={'harmful': Noul(instructions=QUESTION)})
+        response = await client().system_one(state={'prompt': prompt}, questions={'harmful': Noul(instructions=QUESTION)})
         answer = response.answers['harmful']
         assert isinstance(answer, NoulAnswer)
         if answer.noul >= self.threshold:
